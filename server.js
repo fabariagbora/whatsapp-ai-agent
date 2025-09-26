@@ -186,54 +186,89 @@ async function deleteTempLeadById(id) {
 /* ======= Webhook route ======= */
 
 app.post('/webhook*', async (req, res) => {
-  // This matches /webhook, /webhook/, /webhook/connection-update, etc.
-
+  // Log incoming webhook immediately
+  console.log('=== WEBHOOK RECEIVED ===');
+  console.log('Path:', req.path);
+  console.log('Body:', JSON.stringify(req.body, null, 2));
+  
   res.status(200).send({ ok: true });
 
   try {
     const event = req.body;
+    console.log('Event data:', {
+      hasMessages: !!event.messages,
+      hasPayload: !!event.payload,
+      hasBody: !!event.body,
+      instance: event.instance || event.instanceName
+    });
+    
     const messages = event.messages || (event.payload && event.payload.messages) || (event.body && event.body.messages);
-    if (!messages) return;
+    if (!messages) {
+      console.log('No messages found in webhook');
+      return;
+    }
+
+    console.log('Processing', messages.length, 'messages');
 
     for (const msg of messages) {
       const from = msg.from || msg.author || msg.sender;
       const text = (msg.body && msg.body.text) || msg.text || msg.message || (msg.data && msg.data.text) || "";
-      if (!text || text.trim().length === 0) continue;
+      
+      console.log('Message from:', from);
+      console.log('Message text:', text);
+      
+      if (!text || text.trim().length === 0) {
+        console.log('Empty text, skipping');
+        continue;
+      }
 
       const instanceName = event.instance || event.instanceName || SALES_INSTANCE_NAME || 'default-instance';
+      console.log('Using instance:', instanceName);
 
       let botRow = await pg.query('SELECT id, model, context_json FROM bots WHERE instance_name = $1 LIMIT 1', [instanceName]);
       let bot;
       if (botRow.rows.length === 0) {
+        console.log('Creating new bot for instance:', instanceName);
         const insert = await pg.query(
           'INSERT INTO bots (instance_name, model, context_json) VALUES ($1,$2,$3) RETURNING *',
           [instanceName, 'x-ai/grok-4-fast:free', JSON.stringify({})]
         );
         bot = insert.rows[0];
-      } else bot = botRow.rows[0];
+      } else {
+        bot = botRow.rows[0];
+        console.log('Found existing bot:', bot.id);
+      }
 
       const model = bot.model || 'x-ai/grok-4-fast:free';
       const contextJson = bot.context_json || {};
       const businessContext = JSON.stringify(contextJson);
 
+      console.log('Calling OpenRouter for reply...');
       let replyText;
       try {
         replyText = await callOpenRouter(model, `Business context: ${businessContext}\n\nUser: ${text}\n\nReply as a helpful sales assistant.`, 0.2);
-      } catch {
+        console.log('OpenRouter reply:', replyText.substring(0, 100));
+      } catch (err) {
+        console.error('OpenRouter error:', err.message);
         replyText = "Sorry, I'm having trouble right now. We'll get back to you shortly.";
       }
 
+      console.log('Extracting lead data...');
       let leadObj;
       try {
         leadObj = await extractLeadStructured(model, text, businessContext);
-      } catch {
+        console.log('Lead extracted:', leadObj);
+      } catch (err) {
+        console.error('Lead extraction error:', err.message);
         leadObj = { name: null, phone: null, priority: 'unknown', contact_method: 'unknown', notes: '' };
       }
 
       let tempLead;
       try {
         tempLead = await insertTempLead(bot.id, instanceName, leadObj, msg);
-      } catch {
+        console.log('Temp lead created:', tempLead.id);
+      } catch (err) {
+        console.error('Insert temp lead error:', err.message);
         tempLead = null;
       }
 
@@ -242,8 +277,11 @@ app.post('/webhook*', async (req, res) => {
         if (sheetsClient) {
           await appendLeadToSheetRow(leadObj);
           sheetOk = true;
+          console.log('Lead appended to sheet');
         }
-      } catch {}
+      } catch (err) {
+        console.error('Sheet append error:', err.message);
+      }
 
       let notifyOk = false;
       try {
@@ -251,18 +289,34 @@ app.post('/webhook*', async (req, res) => {
           const summary = `New lead (bot=${instanceName}):\nName: ${leadObj.name||'—'}\nPhone: ${leadObj.phone||'—'}\nPriority: ${leadObj.priority}\nContact: ${leadObj.contact_method}\nNotes: ${leadObj.notes||'—'}`;
           await sendTextViaEvolution(SALES_INSTANCE_NAME, SALES_WHATSAPP_NUMBER, summary);
           notifyOk = true;
+          console.log('Sales notification sent');
         }
-      } catch {}
-
-      if (tempLead && sheetOk && notifyOk) {
-        try { await deleteTempLeadById(tempLead.id); } catch {}
+      } catch (err) {
+        console.error('Notify error:', err.message);
       }
 
-      try { await sendTextViaEvolution(instanceName, from, replyText); } catch {}
+      if (tempLead && sheetOk && notifyOk) {
+        try { 
+          await deleteTempLeadById(tempLead.id);
+          console.log('Temp lead deleted');
+        } catch (err) {
+          console.error('Delete temp lead error:', err.message);
+        }
+      }
+
+      console.log('Sending reply to user...');
+      try { 
+        await sendTextViaEvolution(instanceName, from, replyText);
+        console.log('Reply sent successfully');
+      } catch (err) {
+        console.error('Send reply error:', err.message);
+      }
     }
   } catch (err) {
     console.error("Webhook processing error:", err);
   }
+  
+  console.log('=== WEBHOOK COMPLETE ===\n');
 });
 
 /* ======= Admin endpoints ======= */
