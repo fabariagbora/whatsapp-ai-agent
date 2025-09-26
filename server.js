@@ -25,7 +25,7 @@ const {
   EVOLUTION_API_KEY,
   DATABASE_URL,
   OPENROUTER_API_KEY,
-  OPENROUTER_API_URL = "https://api.openrouter.ai/v1/chat/completions",
+  OPENROUTER_API_URL = "https://openrouter-proxy-navy.vercel.app/",
   GOOGLE_SERVICE_ACCOUNT_JSON_BASE64,
   GOOGLE_SPREADSHEET_ID,
   SALES_INSTANCE_NAME,
