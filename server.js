@@ -90,7 +90,7 @@ if (GOOGLE_SERVICE_ACCOUNT_JSON_BASE64 && GOOGLE_SPREADSHEET_ID) {
 
 async function callOpenRouter(model, prompt, temperature = 0.2) {
   const payload = {
-    model: model || "gpt-4o-mini",
+    model: model || "x-ai/grok-4-fast:free",
     messages: [
       { role: "system", content: "You are a helpful sales assistant." },
       { role: "user", content: prompt }
@@ -203,11 +203,14 @@ app.post('/webhook', async (req, res) => {
       let botRow = await pg.query('SELECT id, model, context_json FROM bots WHERE instance_name = $1 LIMIT 1', [instanceName]);
       let bot;
       if (botRow.rows.length === 0) {
-        const insert = await pg.query('INSERT INTO bots (instance_name, model, context_json) VALUES ($1,$2,$3) RETURNING *', [instanceName, 'gpt-4o-mini', JSON.stringify({})]);
+        const insert = await pg.query(
+          'INSERT INTO bots (instance_name, model, context_json) VALUES ($1,$2,$3) RETURNING *',
+          [instanceName, 'x-ai/grok-4-fast:free', JSON.stringify({})]
+        );
         bot = insert.rows[0];
       } else bot = botRow.rows[0];
 
-      const model = bot.model || 'gpt-4o-mini';
+      const model = bot.model || 'x-ai/grok-4-fast:free';
       const contextJson = bot.context_json || {};
       const businessContext = JSON.stringify(contextJson);
 
