@@ -185,7 +185,7 @@ async function deleteTempLeadById(id) {
 
 /* ======= Webhook route ======= */
 
-app.post('/webhook*', async (req, res) => {
+app.post(['/webhook', '/webhook/*'], async (req, res) => {
   // This matches /webhook, /webhook/, /webhook/connection-update, etc.
 
   res.status(200).send({ ok: true });
