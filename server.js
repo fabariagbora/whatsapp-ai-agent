@@ -195,24 +195,36 @@ app.post('/webhook*', async (req, res) => {
 
   try {
     const event = req.body;
-    console.log('Event data:', {
-      hasMessages: !!event.messages,
-      hasPayload: !!event.payload,
-      hasBody: !!event.body,
-      instance: event.instance || event.instanceName
-    });
     
-    const messages = event.messages || (event.payload && event.payload.messages) || (event.body && event.body.messages);
-    if (!messages) {
-      console.log('No messages found in webhook');
+    // Skip non-message events
+    if (event.event !== 'messages.upsert') {
+      console.log('Skipping non-message event:', event.event);
       return;
     }
+    
+    // Extract message from Evolution API v2.2.3 structure
+    const data = event.data;
+    if (!data || !data.message) {
+      console.log('No message data found');
+      return;
+    }
+    
+    // Skip messages sent by the bot itself
+    if (data.key && data.key.fromMe) {
+      console.log('Skipping message from self');
+      return;
+    }
+    
+    console.log('Processing message event');
+    
+    // Convert to array format for consistency
+    const messages = [data];
 
     console.log('Processing', messages.length, 'messages');
 
     for (const msg of messages) {
-      const from = msg.from || msg.author || msg.sender;
-      const text = (msg.body && msg.body.text) || msg.text || msg.message || (msg.data && msg.data.text) || "";
+      const from = msg.key.remoteJid;
+      const text = msg.message.conversation || msg.message.extendedTextMessage?.text || "";
       
       console.log('Message from:', from);
       console.log('Message text:', text);
