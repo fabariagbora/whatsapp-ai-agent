@@ -205,6 +205,13 @@ export default async function handler(req, res) {
     // Extract message details
     const text = event.data.message.conversation || event.data.message.extendedTextMessage?.text || '';
     const from = event.data.key.remoteJid;
+
+// Skip group messages
+    if (from.includes('@g.us')) {
+      console.log('Skipping group message');
+      return res.status(200).json({ ok: true });
+   } 
+
     const instanceName = event.instance || SALES_INSTANCE_NAME || 'whatsapp-bot-2';
     
     if (!text.trim()) {
