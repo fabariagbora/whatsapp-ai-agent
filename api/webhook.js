@@ -144,8 +144,10 @@ async function appendLeadToSheetRow(lead) {
 
 // Evolution send text
 async function sendTextViaEvolution(instance, to, text) {
+  // Remove @s.whatsapp.net suffix
+  const cleanNumber = to.replace('@s.whatsapp.net', '');
   const url = `${EVOLUTION_BASE_URL}/message/sendText/${encodeURIComponent(instance)}`;
-  return axios.post(url, { number: to, text }, {
+  return axios.post(url, { number: cleanNumber, text }, {
     headers: { 'Content-Type': 'application/json', 'apikey': EVOLUTION_API_KEY },
     timeout: 30000
   });
