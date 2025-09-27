@@ -1,0 +1,5 @@
+{
+  "rewrites": [
+    { "source": "/api/webhook/:event", "destination": "/api/webhook" }
+  ]
+}
