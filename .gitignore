@@ -1,3 +1,4 @@
 # environment variables
 evolution.env
 webhook-service.env
+frontend\.env.local
