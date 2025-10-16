@@ -23,6 +23,7 @@ export async function POST(request) {
       .single();
 
     if (accountError || !account) {
+      console.error('❌ Account not found:', accountError);
       return NextResponse.json(
         { error: 'Account not found' },
         { status: 404 }
@@ -37,23 +38,48 @@ export async function POST(request) {
     // Create Evolution instance
     try {
       await createEvolutionInstance(instanceName);
+      console.log('✅ Evolution instance created successfully');
     } catch (err) {
-      // Instance might already exist, that's OK
-      console.log('Instance might already exist:', err.message);
+      console.warn('⚠️ Instance might already exist or failed:', err.message);
     }
+
+    console.log('🔍 Fetching QR code from Evolution API...');
 
     // Get QR code
     const qrData = await getQRCode(instanceName);
 
-    console.log('✅ QR code generated');
+    console.log('🧩 Raw QR data response:', qrData);
+
+    // Handle both base64 and non-base64 formats
+    let qrCodeBase64 = null;
+
+    if (qrData?.qrcode) {
+      if (qrData.qrcode.startsWith('data:image')) {
+        // Already a base64 image
+        qrCodeBase64 = qrData.qrcode;
+        console.log('✅ QR code already in base64 format.');
+      } else if (/^[A-Za-z0-9+/=]+$/.test(qrData.qrcode)) {
+        // Looks like a base64 string without prefix
+        qrCodeBase64 = `data:image/png;base64,${qrData.qrcode}`;
+        console.log('✅ QR code converted to base64 format.');
+      } else {
+        console.warn('⚠️ QR code may be ASCII text or corrupted:', qrData.qrcode.slice(0, 50));
+      }
+    }
+
+    if (!qrCodeBase64) {
+      console.warn('⚠️ No valid base64 QR found, attempting to proceed anyway...');
+    }
+
+    console.log('✅ QR code generation complete.');
 
     // Set webhook URL
     const webhookUrl = `${process.env.NEXT_PUBLIC_APP_URL}/api/webhook`;
     try {
       await setWebhook(instanceName, webhookUrl);
-      console.log('✅ Webhook configured:', webhookUrl);
+      console.log('✅ Webhook configured successfully:', webhookUrl);
     } catch (err) {
-      console.warn('Webhook setup failed:', err.message);
+      console.warn('⚠️ Webhook setup failed:', err.message);
     }
 
     // Update account with instance name
@@ -65,10 +91,12 @@ export async function POST(request) {
       })
       .eq('id', accountId);
 
+    console.log('✅ Account updated with Evolution instance:', instanceName);
+
     return NextResponse.json({
       success: true,
-      qrCode: qrData.qrcode?.base64 || qrData.qrcode,
-      instanceName: instanceName
+      instanceName,
+      qrCode: qrCodeBase64 || qrData.qrcode || null
     });
 
   } catch (error) {
