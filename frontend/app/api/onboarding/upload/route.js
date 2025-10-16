@@ -1,14 +1,20 @@
 // app/api/onboarding/upload/route.js
 export const runtime = 'nodejs';
-export const maxDuration = 60; // Allow up to 60 seconds for large PDFs
+export const maxDuration = 60;
 
 import { NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
-import pdfParse from 'pdf-parse'; // Correct import - it's a function, not a class
 
-//
-// 📨 POST /api/onboarding/upload
-//
+// Use dynamic import for pdf-parse (CommonJS module)
+let pdfParse;
+
+async function getPdfParser() {
+  if (!pdfParse) {
+    pdfParse = (await import('pdf-parse/lib/pdf-parse.js')).default;
+  }
+  return pdfParse;
+}
+
 export async function POST(request) {
   try {
     const formData = await request.formData();
@@ -64,6 +70,7 @@ export async function POST(request) {
     }
 
     const uploadedDocs = [];
+    const parser = await getPdfParser();
 
     // ✅ Process each file
     for (const file of files) {
@@ -81,8 +88,7 @@ export async function POST(request) {
           console.log('   📕 Extracting text from PDF...');
 
           try {
-            // Correct usage: pdfParse is a function that takes a buffer
-            const pdfData = await pdfParse(buffer);
+            const pdfData = await parser(buffer);
             content = pdfData.text?.trim() || '';
 
             if (content.length > 0) {
