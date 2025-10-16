@@ -1,24 +1,10 @@
 // app/api/onboarding/upload/route.js
 export const runtime = 'nodejs';
+export const maxDuration = 60; // Allow up to 60 seconds for large PDFs
 
 import { NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
-import { PDFParse } from 'pdf-parse';
-import { pathToFileURL } from 'url';
-import { resolve } from 'path';
-import { cwd } from 'process';
-
-//
-// 🧩 Configure PDF.js Worker for Next.js/Turbopack builds
-//
-try {
-  const workerPath = resolve(cwd(), 'node_modules/pdfjs-dist/legacy/build/pdf.worker.mjs');
-  const workerUrl = pathToFileURL(workerPath).href;
-  PDFParse.setWorker(workerUrl);
-  console.log('🧩 PDF.js worker configured from:', workerUrl);
-} catch (err) {
-  console.warn('⚠️ Could not configure pdf.worker.mjs automatically:', err.message);
-}
+import pdfParse from 'pdf-parse'; // Correct import - it's a function, not a class
 
 //
 // 📨 POST /api/onboarding/upload
@@ -95,11 +81,9 @@ export async function POST(request) {
           console.log('   📕 Extracting text from PDF...');
 
           try {
-            const parser = new PDFParse({ data: buffer });
-            const result = await parser.getText();
-            await parser.destroy();
-
-            content = result.text?.trim() || '';
+            // Correct usage: pdfParse is a function that takes a buffer
+            const pdfData = await pdfParse(buffer);
+            content = pdfData.text?.trim() || '';
 
             if (content.length > 0) {
               console.log(`   ✅ PDF text extracted (${content.length} chars)`);
@@ -113,7 +97,7 @@ export async function POST(request) {
           }
 
         } else if (file.type === 'text/plain' || file.name.endsWith('.txt')) {
-          content = Buffer.from(buffer).toString('utf-8');
+          content = buffer.toString('utf-8');
           console.log(`   ✅ Text content extracted (${content.length} chars)`);
 
         } else if (
