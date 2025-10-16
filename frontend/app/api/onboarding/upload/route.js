@@ -4,15 +4,45 @@ export const maxDuration = 60;
 
 import { NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
+import PDFParser from 'pdf2json';
 
-// Use dynamic import for pdf-parse (CommonJS module)
-let pdfParse;
+// Helper function to parse PDF
+async function parsePDF(buffer) {
+  return new Promise((resolve, reject) => {
+    const pdfParser = new PDFParser();
 
-async function getPdfParser() {
-  if (!pdfParse) {
-    pdfParse = (await import('pdf-parse/lib/pdf-parse.js')).default;
-  }
-  return pdfParse;
+    pdfParser.on('pdfParser_dataError', (errData) => {
+      reject(new Error(errData.parserError));
+    });
+
+    pdfParser.on('pdfParser_dataReady', (pdfData) => {
+      try {
+        // Extract text from all pages
+        let text = '';
+        if (pdfData.Pages) {
+          for (const page of pdfData.Pages) {
+            if (page.Texts) {
+              for (const textItem of page.Texts) {
+                if (textItem.R) {
+                  for (const run of textItem.R) {
+                    if (run.T) {
+                      text += decodeURIComponent(run.T) + ' ';
+                    }
+                  }
+                }
+              }
+            }
+            text += '\n';
+          }
+        }
+        resolve(text.trim());
+      } catch (err) {
+        reject(err);
+      }
+    });
+
+    pdfParser.parseBuffer(buffer);
+  });
 }
 
 export async function POST(request) {
@@ -70,7 +100,6 @@ export async function POST(request) {
     }
 
     const uploadedDocs = [];
-    const parser = await getPdfParser();
 
     // ✅ Process each file
     for (const file of files) {
@@ -88,8 +117,7 @@ export async function POST(request) {
           console.log('   📕 Extracting text from PDF...');
 
           try {
-            const pdfData = await parser(buffer);
-            content = pdfData.text?.trim() || '';
+            content = await parsePDF(buffer);
 
             if (content.length > 0) {
               console.log(`   ✅ PDF text extracted (${content.length} chars)`);
