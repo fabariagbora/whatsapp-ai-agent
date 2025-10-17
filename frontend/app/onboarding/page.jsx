@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { MessageSquare, Zap, Phone, ChevronRight, CheckCircle, Loader, Upload, X, FileText, AlertCircle, Sun, Moon } from 'lucide-react';
 
 const OnboardingFlow = () => {
