@@ -763,9 +763,11 @@ const OnboardingFlow = () => {
                       <div className={`w-64 h-64 rounded-xl flex items-center justify-center mb-4 border-4 border-green-600 p-4 ${
                         darkMode ? 'bg-gray-700' : 'bg-white'
                       }`}>
-                        <div className="w-full h-full bg-gray-800 flex items-center justify-center text-white text-xs">
-                          QR CODE
-                        </div>
+                        <img 
+                          src={qrCode} 
+                          alt="WhatsApp QR Code" 
+                          className="w-full h-full object-contain"
+                        />
                       </div>
                       
                       <div className={`rounded-lg p-4 w-full max-w-md mb-4 ${
