@@ -21,6 +21,37 @@ const OnboardingFlow = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [darkMode, setDarkMode] = useState(false);
 
+  // Auto-refresh QR code every 45 seconds to prevent expiration
+  useEffect(() => {
+    let refreshInterval;
+    
+    if (step === 5 && qrCode && !isConnected) {
+      refreshInterval = setInterval(async () => {
+        console.log('🔄 Refreshing QR code...');
+        try {
+          const response = await fetch('/api/evolution/qr', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ accountId: accountId })
+          });
+          
+          const data = await response.json();
+          if (data.qrCode) {
+            setQrCode(data.qrCode);
+            console.log('✅ QR code refreshed');
+          }
+        } catch (error) {
+          console.error('Failed to refresh QR code:', error);
+        }
+      }, 45000); // Refresh every 45 seconds (45000 milliseconds)
+    }
+    
+    return () => {
+      if (refreshInterval) clearInterval(refreshInterval);
+    };
+  }, [step, qrCode, isConnected, accountId]);
+
+
   const countries = [
     { code: 'NG', name: 'Nigeria', flag: '🇳🇬', personality: 'nigerian' },
     { code: 'GH', name: 'Ghana', flag: '🇬🇭', personality: 'ghanaian' },
