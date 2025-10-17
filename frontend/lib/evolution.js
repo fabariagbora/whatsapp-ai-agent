@@ -3,7 +3,7 @@ const EVOLUTION_API_KEY = process.env.EVOLUTION_API_KEY;
 
 /**
  * Create a new Evolution instance
- * Now includes a webhook field (required in Evolution API v2.3.5+)
+ * Includes webhook (required since v2.3.5+) and verifies creation
  */
 export async function createEvolutionInstance(instanceName) {
   const webhookUrl = `${process.env.NEXT_PUBLIC_APP_URL}/api/webhook`;
@@ -21,7 +21,7 @@ export async function createEvolutionInstance(instanceName) {
       instanceName: instanceName,
       qrcode: true,
       integration: 'WHATSAPP-BAILEYS',
-      webhook: webhookUrl, // ✅ Required field added
+      webhook: webhookUrl,
       webhook_by_events: false,
       webhook_base64: false,
       events: [
@@ -40,6 +40,24 @@ export async function createEvolutionInstance(instanceName) {
 
   const data = await response.json();
   console.log('✅ Evolution instance created successfully:', data);
+
+  // 🔍 Verify the instance was actually created in the Evolution DB
+  try {
+    const verifyRes = await fetch(`${EVOLUTION_BASE_URL}/instance/${instanceName}`, {
+      headers: { 'apikey': EVOLUTION_API_KEY }
+    });
+
+    if (!verifyRes.ok) {
+      const verifyText = await verifyRes.text();
+      console.warn('⚠️ Instance verification failed:', verifyText);
+    } else {
+      const verifyData = await verifyRes.json();
+      console.log('🧩 Instance verified in Evolution DB:', verifyData);
+    }
+  } catch (verifyErr) {
+    console.error('⚠️ Could not verify instance existence:', verifyErr.message);
+  }
+
   return data;
 }
 
@@ -64,7 +82,6 @@ export async function getQRCode(instanceName) {
   const data = await response.json();
   console.log('✅ QR code fetched successfully:', data);
   
-  // Return structured data that matches what your route expects
   return {
     qrcode: data.base64 || data.code || data.qrcode,
     pairingCode: data.pairingCode,
@@ -134,9 +151,7 @@ export async function setWebhook(instanceName, webhookUrl) {
  * Send a text message through a given Evolution instance
  */
 export async function sendTextMessage(instanceName, to, text) {
-  // Clean phone number
   const cleanNumber = to.replace('@s.whatsapp.net', '').replace(/\D/g, '');
-
   console.log(`💬 Sending message to ${cleanNumber} via ${instanceName}`);
 
   const response = await fetch(`${EVOLUTION_BASE_URL}/message/sendText/${instanceName}`, {
