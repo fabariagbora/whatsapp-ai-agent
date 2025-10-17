@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
-import { createEvolutionInstance, getQRCode, setWebhook } from '@/lib/evolution';
+import { createEvolutionInstance, getQRCode } from '@/lib/evolution';
 
 /**
  * POST /api/evolution/qr
@@ -41,33 +41,64 @@ export async function POST(request) {
 
     let instanceCreated = false;
 
-    // Step 1: Try to create the Evolution instance (safe retry)
-    try {
-      console.log('⚙️ Attempting to create Evolution instance...');
-      const createRes = await createEvolutionInstance(instanceName);
-      instanceCreated = true;
-      console.log('✅ Evolution instance created:', createRes?.instance || instanceName);
-    } catch (err) {
-      console.warn('⚠️ Instance creation failed or already exists:', err.message);
+    // Step 1: Try to create the Evolution instance with retry logic
+    let retries = 0;
+    const maxRetries = 3;
+
+    while (!instanceCreated && retries < maxRetries) {
+      try {
+        console.log(`⚙️ Creating Evolution instance (attempt ${retries + 1}/${maxRetries})...`);
+        await createEvolutionInstance(instanceName);
+        
+        // CRITICAL: Wait for instance to be persisted in Evolution's database
+        console.log('⏳ Waiting for instance to persist in database...');
+        await new Promise(resolve => setTimeout(resolve, 3000)); // 3 second delay
+        
+        instanceCreated = true;
+        console.log('✅ Evolution instance created and persisted:', instanceName);
+        break;
+      } catch (err) {
+        console.warn(`⚠️ Instance creation attempt ${retries + 1} failed:`, err.message);
+        
+        // If instance already exists, that's fine
+        if (err.message.includes('already exists') || err.message.includes('duplicate')) {
+          console.log('ℹ️ Instance already exists, continuing...');
+          instanceCreated = true;
+          break;
+        }
+        
+        retries++;
+        if (retries < maxRetries) {
+          console.log(`🔁 Retrying in 2 seconds...`);
+          await new Promise(resolve => setTimeout(resolve, 2000));
+        }
+      }
     }
 
-    // Step 2: Fetch the QR code
+    if (!instanceCreated) {
+      throw new Error('Failed to create or verify instance after multiple attempts');
+    }
+
+    // Step 2: Fetch the QR code with retry logic
     console.log('📷 Fetching QR code from Evolution API...');
     let qrData = null;
-    try {
-      qrData = await getQRCode(instanceName);
-      console.log('✅ QR data fetched successfully');
-    } catch (qrErr) {
-      console.error('❌ Error fetching QR code:', qrErr.message);
+    let qrRetries = 0;
+    const maxQrRetries = 5;
 
-      // Retry creation once if it might not exist yet
-      if (!instanceCreated) {
-        console.log('🔁 Retrying instance creation after failed QR fetch...');
-        await createEvolutionInstance(instanceName);
+    while (!qrData && qrRetries < maxQrRetries) {
+      try {
         qrData = await getQRCode(instanceName);
-        console.log('✅ QR data fetched successfully after retry');
-      } else {
-        throw qrErr;
+        console.log('✅ QR data fetched successfully');
+      } catch (qrErr) {
+        console.warn(`⚠️ QR fetch attempt ${qrRetries + 1} failed:`, qrErr.message);
+        qrRetries++;
+        
+        if (qrRetries < maxQrRetries) {
+          console.log(`🔁 Retrying QR fetch in 2 seconds...`);
+          await new Promise(resolve => setTimeout(resolve, 2000));
+        } else {
+          throw new Error('Failed to fetch QR code after multiple attempts');
+        }
       }
     }
 
@@ -87,17 +118,7 @@ export async function POST(request) {
       }
     }
 
-    // Step 4: Set webhook URL
-    const webhookUrl = `${process.env.NEXT_PUBLIC_APP_URL}/api/webhook`;
-    try {
-      console.log('🌐 Setting webhook:', webhookUrl);
-      await setWebhook(instanceName, webhookUrl);
-      console.log('✅ Webhook successfully set.');
-    } catch (webhookErr) {
-      console.warn('⚠️ Webhook setup failed:', webhookErr.message);
-    }
-
-    // Step 5: Update Supabase account record
+    // Step 4: Update Supabase account record
     const updateFields = {
       evolution_instance: instanceName,
       updated_at: new Date().toISOString(),
@@ -114,7 +135,7 @@ export async function POST(request) {
       console.log('✅ Supabase account updated with instance name:', instanceName);
     }
 
-    // Step 6: Return response
+    // Step 5: Return response
     return NextResponse.json({
       success: true,
       instanceName,
