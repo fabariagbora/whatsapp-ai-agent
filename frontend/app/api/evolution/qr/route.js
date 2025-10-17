@@ -40,82 +40,91 @@ export async function POST(request) {
     console.log('📱 Using Evolution instance name:', instanceName);
 
     let instanceCreated = false;
+    let creationError = null;
 
-    // Step 1: Try to create the Evolution instance with retry logic
-    let retries = 0;
-    const maxRetries = 3;
-
-    while (!instanceCreated && retries < maxRetries) {
-      try {
-        console.log(`⚙️ Creating Evolution instance (attempt ${retries + 1}/${maxRetries})...`);
-        await createEvolutionInstance(instanceName);
-        
-        // CRITICAL: Wait for instance to be persisted in Evolution's database
-        console.log('⏳ Waiting for instance to persist in database...');
-        await new Promise(resolve => setTimeout(resolve, 3000)); // 3 second delay
-        
+    // Step 1: Try to create the Evolution instance
+    try {
+      console.log('⚙️ Creating Evolution instance...');
+      await createEvolutionInstance(instanceName);
+      instanceCreated = true;
+      console.log('✅ Evolution instance created successfully');
+    } catch (err) {
+      creationError = err.message;
+      console.warn('⚠️ Instance creation failed:', err.message);
+      
+      // If instance already exists, that's okay
+      if (err.message.includes('already exists') || 
+          err.message.includes('duplicate') ||
+          err.message.includes('Instance already exists')) {
+        console.log('ℹ️ Instance already exists, continuing...');
         instanceCreated = true;
-        console.log('✅ Evolution instance created and persisted:', instanceName);
-        break;
-      } catch (err) {
-        console.warn(`⚠️ Instance creation attempt ${retries + 1} failed:`, err.message);
-        
-        // If instance already exists, that's fine
-        if (err.message.includes('already exists') || err.message.includes('duplicate')) {
-          console.log('ℹ️ Instance already exists, continuing...');
-          instanceCreated = true;
-          break;
-        }
-        
-        retries++;
-        if (retries < maxRetries) {
-          console.log(`🔁 Retrying in 2 seconds...`);
-          await new Promise(resolve => setTimeout(resolve, 2000));
-        }
       }
     }
 
-    if (!instanceCreated) {
-      throw new Error('Failed to create or verify instance after multiple attempts');
-    }
-
-    // Step 2: Fetch the QR code with retry logic
+    // Step 2: Fetch the QR code (with single retry if needed)
     console.log('📷 Fetching QR code from Evolution API...');
     let qrData = null;
-    let qrRetries = 0;
-    const maxQrRetries = 5;
 
-    while (!qrData && qrRetries < maxQrRetries) {
-      try {
-        qrData = await getQRCode(instanceName);
-        console.log('✅ QR data fetched successfully');
-      } catch (qrErr) {
-        console.warn(`⚠️ QR fetch attempt ${qrRetries + 1} failed:`, qrErr.message);
-        qrRetries++;
-        
-        if (qrRetries < maxQrRetries) {
-          console.log(`🔁 Retrying QR fetch in 2 seconds...`);
-          await new Promise(resolve => setTimeout(resolve, 2000));
-        } else {
-          throw new Error('Failed to fetch QR code after multiple attempts');
+    try {
+      qrData = await getQRCode(instanceName);
+      console.log('✅ QR data fetched successfully');
+    } catch (qrErr) {
+      console.error('❌ First QR fetch attempt failed:', qrErr.message);
+      
+      // If we haven't created the instance yet, try creating it now
+      if (!instanceCreated) {
+        console.log('🔁 Attempting to create instance before retry...');
+        try {
+          await createEvolutionInstance(instanceName);
+          console.log('⏳ Waiting 3 seconds for persistence...');
+          await new Promise(resolve => setTimeout(resolve, 3000));
+        } catch (createErr) {
+          console.warn('⚠️ Retry creation failed:', createErr.message);
         }
+      } else {
+        // Instance exists, just wait a bit
+        console.log('⏳ Waiting 2 seconds before retry...');
+        await new Promise(resolve => setTimeout(resolve, 2000));
+      }
+      
+      // Retry QR fetch once
+      try {
+        console.log('🔁 Retrying QR code fetch...');
+        qrData = await getQRCode(instanceName);
+        console.log('✅ QR data fetched successfully on retry');
+      } catch (retryErr) {
+        console.error('❌ QR fetch retry also failed:', retryErr.message);
+        
+        // Return detailed error
+        return NextResponse.json({
+          error: 'Failed to fetch QR code',
+          details: {
+            creationError,
+            qrError: retryErr.message,
+            instanceName,
+            message: 'Instance may be created but QR code unavailable. Check Evolution API logs.'
+          }
+        }, { status: 500 });
       }
     }
 
-    console.log('🧩 Raw QR data:', qrData);
+    console.log('🧩 Raw QR data received:', JSON.stringify(qrData).slice(0, 100));
 
     // Step 3: Normalize QR code format
     let qrCodeBase64 = null;
     if (qrData?.qrcode) {
       if (qrData.qrcode.startsWith('data:image')) {
-        qrCodeBase64 = qrData.qrcode; // Already formatted
-        console.log('✅ QR code already base64 image.');
+        qrCodeBase64 = qrData.qrcode;
+        console.log('✅ QR code already base64 image');
       } else if (/^[A-Za-z0-9+/=]+$/.test(qrData.qrcode)) {
         qrCodeBase64 = `data:image/png;base64,${qrData.qrcode}`;
-        console.log('✅ QR code converted to base64 image.');
+        console.log('✅ QR code converted to base64 image');
       } else {
-        console.warn('⚠️ Unrecognized QR code format:', qrData.qrcode.slice(0, 40));
+        console.warn('⚠️ Unrecognized QR code format, using raw value');
+        qrCodeBase64 = qrData.qrcode;
       }
+    } else {
+      console.warn('⚠️ No QR code in response:', qrData);
     }
 
     // Step 4: Update Supabase account record
@@ -139,14 +148,20 @@ export async function POST(request) {
     return NextResponse.json({
       success: true,
       instanceName,
-      qrCode: qrCodeBase64 || qrData?.qrcode || null,
+      qrCode: qrCodeBase64,
       pairingCode: qrData?.pairingCode || null,
+      count: qrData?.count || null,
     });
 
   } catch (error) {
     console.error('❌ Fatal QR route error:', error);
+    console.error('Stack trace:', error.stack);
+    
     return NextResponse.json(
-      { error: error.message || 'Failed to generate QR code' },
+      { 
+        error: error.message || 'Failed to generate QR code',
+        details: error.stack
+      },
       { status: 500 }
     );
   }
