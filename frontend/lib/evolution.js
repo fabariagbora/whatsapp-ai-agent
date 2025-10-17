@@ -62,8 +62,14 @@ export async function getQRCode(instanceName) {
   }
 
   const data = await response.json();
-  console.log('✅ QR code fetched successfully.');
-  return data;
+  console.log('✅ QR code fetched successfully:', data);
+  
+  // Return structured data that matches what your route expects
+  return {
+    qrcode: data.base64 || data.code || data.qrcode,
+    pairingCode: data.pairingCode,
+    count: data.count
+  };
 }
 
 /**
